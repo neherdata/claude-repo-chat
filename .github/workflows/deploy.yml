@@ -38,9 +38,9 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.WESTOVERXYZ_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H app-server >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H westoverxyz >> ~/.ssh/known_hosts 2>/dev/null || true
           ssh-keyscan -H westoverdev >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Install Ansible
@@ -74,4 +74,9 @@ jobs:
           sleep 5
 
           # Test health endpoint (via Tailscale)
-          curl -f http://app-server:8091/health || exit 1
+          TARGET_HOST="${{ steps.target.outputs.host }}"
+          if [ "$TARGET_HOST" = "westoverxyz" ]; then
+            curl -f http://westoverxyz:8091/health || exit 1
+          elif [ "$TARGET_HOST" = "westoverdev" ]; then
+            curl -f http://westoverdev:8092/health || exit 1
+          fi
