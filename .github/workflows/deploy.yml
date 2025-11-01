@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: neherdata/nds_server
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NDS_HELPER_TOKEN }}
           path: nds_server
 
       - name: Setup Tailscale
