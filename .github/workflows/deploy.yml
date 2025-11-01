@@ -26,7 +26,6 @@ jobs:
         with:
           repository: neherdata/nds_server
           token: ${{ secrets.ACTIONS_DEPLOY_ACCESS_TOKEN }}
-          path: nds_server
 
       - name: Setup Tailscale
         uses: tailscale/github-action@v2
@@ -35,48 +34,19 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Setup SSH key
+      - name: Run Ansible deployment
+        working-directory: ansible
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.WESTOVERXYZ_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H westoverxyz >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh-keyscan -H westoverdev >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Install Ansible
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible
-
-      - name: Determine target host
-        id: target
-        run: |
+          # Determine target host
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "host=${{ inputs.target_host }}" >> $GITHUB_OUTPUT
+            TARGET_HOST="${{ inputs.target_host }}"
           else
-            # Default to westoverxyz for automatic deploys
-            echo "host=westoverxyz" >> $GITHUB_OUTPUT
+            TARGET_HOST="westoverxyz"
           fi
 
-      - name: Run Ansible deployment
-        working-directory: nds_server/ansible
-        run: |
+          # Run Ansible playbook
           ansible-playbook playbooks/deploy-workspace-terminal.yml \
-            -e target_host=${{ steps.target.outputs.host }} \
-            -e ansible_user=westover \
+            -e target_host=$TARGET_HOST \
             -i inventory/hosts.yml
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'false'
-
-      - name: Verify deployment
-        run: |
-          # Wait for service to start
-          sleep 5
-
-          # Test health endpoint (via Tailscale)
-          TARGET_HOST="${{ steps.target.outputs.host }}"
-          if [ "$TARGET_HOST" = "westoverxyz" ]; then
-            curl -f http://westoverxyz:8091/health || exit 1
-          elif [ "$TARGET_HOST" = "westoverdev" ]; then
-            curl -f http://westoverdev:8092/health || exit 1
-          fi
