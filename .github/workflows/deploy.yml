@@ -1,0 +1,77 @@
+name: Deploy Workspace Terminal
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target_host:
+        description: 'Target host to deploy to'
+        required: true
+        default: 'westoverxyz'
+        type: choice
+        options:
+          - westoverxyz
+          - westoverdev
+          - bumblebee
+          - optimus-prime
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout nds_server
+        uses: actions/checkout@v4
+        with:
+          repository: neherdata/nds_server
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: nds_server
+
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H app-server >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H westoverdev >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Determine target host
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "host=${{ inputs.target_host }}" >> $GITHUB_OUTPUT
+          else
+            # Default to westoverxyz for automatic deploys
+            echo "host=westoverxyz" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Ansible deployment
+        working-directory: nds_server/ansible
+        run: |
+          ansible-playbook playbooks/deploy-workspace-terminal.yml \
+            -e target_host=${{ steps.target.outputs.host }} \
+            -e ansible_user=westover \
+            -i inventory/hosts.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'false'
+
+      - name: Verify deployment
+        run: |
+          # Wait for service to start
+          sleep 5
+
+          # Test health endpoint (via Tailscale)
+          curl -f http://app-server:8091/health || exit 1
